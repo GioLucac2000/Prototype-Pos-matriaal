@@ -141,5 +141,68 @@
     return chart;
   }
 
-  window.KMCharts = { bar, donut, destroyAll, cssVar };
+  /**
+   * Lijnchart: prognose (bv. voorraad vs. verwacht verbruik), één as, HL.
+   * series: [{ label, data, colorVar, dashed, noTooltip }]
+   */
+  function line(canvas, labels, series, unit = 'HL') {
+    const chart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: series.map((s) => ({
+          label: s.label,
+          data: s.data,
+          borderColor: cssVar(s.colorVar),
+          backgroundColor: cssVar(s.colorVar),
+          borderWidth: 2,
+          borderDash: s.dashed ? [6, 5] : undefined,
+          pointRadius: 0,
+          pointHoverRadius: s.noTooltip ? 0 : 4,
+          pointHoverBackgroundColor: cssVar(s.colorVar),
+          pointHoverBorderColor: cssVar('--surface'),
+          pointHoverBorderWidth: 2,
+          tension: 0.25,
+          fill: false,
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...baseTooltip(),
+            filter: (item) => !series[item.datasetIndex].noTooltip,
+            callbacks: {
+              label: (ctx) => ` ${ctx.dataset.label}: ${KM.fmt.int(Math.round(ctx.parsed.y))} ${unit}`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { color: cssVar('--offset') },
+            ticks: { color: cssVar('--text-3'), font: { family: 'Inter', size: 11 }, maxRotation: 0, autoSkipPadding: 12 },
+          },
+          y: {
+            grid: { color: cssVar('--grid-line'), drawTicks: false },
+            border: { display: false },
+            ticks: {
+              color: cssVar('--text-3'),
+              font: { family: 'Inter', size: 11 },
+              maxTicksLimit: 5,
+              callback: (v) => KM.fmt.int(v),
+            },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+    registry.push(chart);
+    return chart;
+  }
+
+  window.KMCharts = { bar, donut, line, destroyAll, cssVar };
 })();

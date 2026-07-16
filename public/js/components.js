@@ -29,6 +29,9 @@
     'Prospect': ['info', 'compass'],
     'Afgerond': ['neutral', 'flag'],
     'Retour laat': ['serious', 'alert-triangle'],
+    'Op peil': ['good', 'circle-check'],
+    'Krap': ['warn', 'triangle-alert'],
+    'Bestel nu': ['crit', 'circle-alert'],
   };
 
   function badge(status) {
@@ -253,5 +256,21 @@
       <span class="legend-item"><span class="legend-swatch" style="background:var(${i.colorVar})"></span>${esc(i.label)}${i.value !== undefined ? ` <span class="legend-val">${esc(i.value)}</span>` : ''}</span>`).join('')}</div>`;
   }
 
-  window.KMC = { esc, badge, kpiRow, deltaHtml, emptyState, skeletonDashboard, skeletonTable, DataTable, chartLegend, refreshIcons };
+  // ---------- Toast ----------
+  const TOAST_ICONS = { good: 'circle-check-big', info: 'info', warn: 'triangle-alert' };
+  function toast(title, msg, kind = 'good') {
+    const c = document.getElementById('toasts');
+    if (!c) return;
+    const el = document.createElement('div');
+    el.className = `toast ${kind}`;
+    el.innerHTML = `<i data-lucide="${TOAST_ICONS[kind] || 'info'}"></i><div><strong>${esc(title)}</strong>${msg ? esc(msg) : ''}</div>`;
+    c.appendChild(el);
+    refreshIcons(c);
+    setTimeout(() => {
+      el.classList.add('leaving');
+      setTimeout(() => el.remove(), 300);
+    }, 3600);
+  }
+
+  window.KMC = { esc, badge, kpiRow, deltaHtml, emptyState, skeletonDashboard, skeletonTable, DataTable, chartLegend, refreshIcons, toast };
 })();

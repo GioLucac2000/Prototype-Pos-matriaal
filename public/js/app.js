@@ -5,16 +5,18 @@
 (function () {
   'use strict';
 
-  const { esc, badge, kpiRow, emptyState, skeletonDashboard, skeletonTable, DataTable, chartLegend, refreshIcons, deltaHtml } = KMC;
+  const { esc, badge, kpiRow, emptyState, skeletonDashboard, skeletonTable, DataTable, chartLegend, refreshIcons, deltaHtml, toast } = KMC;
   const fmt = KM.fmt;
 
   const state = {
+    loggedIn: false,
     brand: 'heineken',
     env: 'insights',
     view: 'overview',
     theme: 'light',
     cart: {},
     orderNote: null,
+    aiOpen: false,
   };
 
   const NAV = {
@@ -25,6 +27,7 @@
         { label: 'Analyse', items: [
           { id: 'overview', label: 'Overzicht', icon: 'layout-dashboard' },
           { id: 'volume', label: 'Volume & rotatie', icon: 'trending-up' },
+          { id: 'forecast', label: 'Voorraadprognose', icon: 'chart-line' },
           { id: 'outlets', label: 'Outlets', icon: 'map-pin' },
           { id: 'campaigns', label: 'Campagnes', icon: 'megaphone' },
         ] },
@@ -66,9 +69,23 @@
   // =========================================================
   // Shell: sidebar, header, thema
   // =========================================================
+  // Orderbeheer is Keymerch-breed: orders van alle merken, met merkfilter.
+  function allOrders() {
+    const rows = [];
+    for (const key of Object.keys(KM.BRAND_DEFS)) {
+      const bd = KM.getBrandData(key);
+      for (const o of bd.orders) {
+        if (!o.key) { o.key = key + ':' + o.id; o.brand = bd.def.name; }
+        rows.push(o);
+      }
+    }
+    rows.sort((a, b) => a.daysAgo - b.daysAgo);
+    return rows;
+  }
+
   function navCounts(d) {
     return {
-      orderbook: d.orders.filter((o) => !['Geleverd', 'Geannuleerd'].includes(o.status)).length,
+      orderbook: allOrders().filter((o) => !['Geleverd', 'Geannuleerd'].includes(o.status)).length,
       requests: d.requests.filter((r) => ['Nieuw', 'In review'].includes(r.status)).length,
       kegs: d.kegs.fleet.overdue,
     };
@@ -112,6 +129,14 @@
     state.view = NAV[env].defaultView;
     state.orderNote = null;
     render(true);
+    refreshAgent();
+  }
+
+  function refreshAgent() {
+    const body = $('#ai-body');
+    if (!body) return;
+    body.innerHTML = '';
+    if (state.aiOpen) aiReset();
   }
 
   function setView(view) {
@@ -127,6 +152,7 @@
     state.cart = {};
     state.orderNote = null;
     render(true);
+    refreshAgent();
   }
 
   function toggleTheme() {
@@ -167,6 +193,7 @@
     const views = {
       overview: viewInsightsOverview,
       volume: viewVolume,
+      forecast: viewForecast,
       outlets: viewOutlets,
       campaigns: viewCampaigns,
       orderbook: viewOrderbook,
@@ -331,6 +358,85 @@
     });
   }
 
+  function viewForecast(d) {
+    // Deterministische prognose: huidige depotvoorraad vs. verwacht verbruik, 12 weken vooruit.
+    const weeklyUse = d.def.scale.ytdHL / 52;
+    const currentStock = Math.round(weeklyUse * 6.4);
+    const reorderPoint = Math.round(weeklyUse * 3);
+    const weeks = Array.from({ length: 12 }, (_, i) => 'wk ' + (29 + i));
+    const seasonal = [1.06, 1.09, 1.11, 1.04, 0.98, 0.95, 0.92, 0.9, 0.93, 0.97, 1.0, 1.02];
+    let stock = currentStock;
+    let cumUse = 0;
+    const stockLine = [], useLine = [];
+    seasonal.forEach((f, i) => {
+      const use = weeklyUse * f;
+      cumUse += use;
+      stock -= use;
+      if (stock < reorderPoint) stock += weeklyUse * 5; // geplande aanvulling vanuit brouwerij
+      stockLine.push(Math.round(stock));
+      useLine.push(Math.round(cumUse));
+    });
+    const coverWeeks = currentStock / weeklyUse;
+
+    const sellable = d.def.products.filter((p) => p.hl > 0);
+    const weights = sellable.map((_, i) => 1 / (i + 1.6));
+    const wSum = weights.reduce((a, b) => a + b, 0);
+    const skuRows = sellable.map((p, i) => {
+      const use = (d.def.scale.ytdHL / 52) * (weights[i] / wSum);
+      const cover = +(3 + ((i * 41) % 70) / 10).toFixed(1);
+      return {
+        ...p,
+        stock: Math.round(use * cover),
+        weeklyUse: +use.toFixed(1),
+        cover,
+        coverLabel: cover < 4 ? 'Bestel nu' : cover < 6 ? 'Krap' : 'Op peil',
+      };
+    });
+
+    main.innerHTML = `<div class="view">
+      ${viewHeader('Voorraadprognose', `Depotvoorraad afgezet tegen het verwachte verbruik van ${esc(d.def.name)} — 12 weken vooruit, in hectoliters.`)}
+      ${kpiRow([
+        { label: 'Depotvoorraad', value: fmt.int(currentStock), unit: 'HL', delta: null, deltaLabel: 'per vandaag', icon: 'warehouse' },
+        { label: 'Verwacht verbruik', value: fmt.int(Math.round(weeklyUse)), unit: 'HL/wk', delta: 3.1, deltaLabel: 'vs. vorige 4 weken', icon: 'trending-up' },
+        { label: 'Weken dekking', value: fmt.dec(coverWeeks, 1), unit: 'wkn', delta: null, deltaLabel: 'bij huidig verbruik', icon: 'calendar' },
+        { label: 'SKU’s onder herbestelpunt', value: String(skuRows.filter((r) => r.coverLabel === 'Bestel nu').length), unit: '', delta: null, deltaLabel: 'actie vereist', icon: 'triangle-alert' },
+      ])}
+      <div class="card section-gap">
+        <div class="card-header"><div><div class="card-title">Voorraad vs. verwacht verbruik</div><div class="card-sub">Projectie 12 weken · inclusief geplande aanvullingen vanuit de brouwerij</div></div></div>
+        <div class="card-body"><div class="chart-wrap" style="height:260px"><canvas id="chart-forecast"></canvas></div></div>
+        ${chartLegend([
+          { label: 'Verwachte voorraad', colorVar: '--series-1' },
+          { label: 'Cumulatief verbruik', colorVar: '--series-2' },
+          { label: 'Herbestelpunt', colorVar: '--text-3' },
+        ])}
+      </div>
+      <div id="tbl-forecast"></div>
+    </div>`;
+    KMCharts.line($('#chart-forecast'), weeks, [
+      { label: 'Verwachte voorraad', data: stockLine, colorVar: '--series-1' },
+      { label: 'Cumulatief verbruik', data: useLine, colorVar: '--series-2' },
+      { label: 'Herbestelpunt', data: weeks.map(() => reorderPoint), colorVar: '--text-3', dashed: true, noTooltip: true },
+    ]);
+    new DataTable($('#tbl-forecast'), {
+      title: 'Dekking per SKU',
+      subtitle: 'Voorraad, verbruik en herbestelstatus per artikel',
+      columns: [
+        { key: 'name', label: 'Product', sortable: true, render: (r) => `<span class="td-strong">${esc(r.name)}</span><span class="td-sub">${esc(r.sku)} · ${esc(r.format)}</span>` },
+        { key: 'stock', label: 'Voorraad (HL)', sortable: true, num: true, render: (r) => fmt.int(r.stock) },
+        { key: 'weeklyUse', label: 'Verbruik (HL/wk)', sortable: true, num: true, render: (r) => fmt.dec(r.weeklyUse) },
+        { key: 'cover', label: 'Dekking (wkn)', sortable: true, num: true, render: (r) => fmt.dec(r.cover) },
+        { key: 'coverLabel', label: 'Status', sortable: true, render: (r) => badge(r.coverLabel) },
+      ],
+      rows: skuRows,
+      searchKeys: ['name', 'sku'],
+      searchPlaceholder: 'Zoek product of SKU…',
+      filters: [{ key: 'coverLabel', label: 'Status', options: ['Bestel nu', 'Krap', 'Op peil'] }],
+      initialSort: 'cover',
+      initialSortDir: 'asc',
+      pageSize: 10,
+    });
+  }
+
   function viewOutlets(d) {
     main.innerHTML = `<div class="view">
       ${viewHeader('Outlets', 'Alle verkooppunten met volume, rotatie en status. Klik op een rij voor detail.')}
@@ -456,7 +562,7 @@
       <div class="detail-header">
         <div>
           <div class="detail-title">${esc(o.id)}</div>
-          <div class="detail-sub">${esc(o.outlet)} · ${esc(o.city)} · ref ${esc(o.ref)}</div>
+          <div class="detail-sub">${o.brand ? esc(o.brand) + ' · ' : ''}${esc(o.outlet)} · ${esc(o.city)} · ref ${esc(o.ref)}</div>
         </div>
         <div class="card-header-actions">${badge(o.status)}</div>
       </div>
@@ -499,18 +605,22 @@
   let selectedOrderId = null;
 
   function viewOrderbook(d) {
-    const open = d.orders.filter((o) => !['Geleverd', 'Geannuleerd'].includes(o.status));
-    const inTransitHL = d.orders.filter((o) => o.status === 'In levering').reduce((s, o) => s + o.hl, 0);
-    const value30 = d.orders.filter((o) => o.daysAgo <= 30 && o.status !== 'Geannuleerd').reduce((s, o) => s + o.value, 0);
+    const orders = allOrders();
+    const open = orders.filter((o) => !['Geleverd', 'Geannuleerd'].includes(o.status));
+    const inTransitHL = orders.filter((o) => o.status === 'In levering').reduce((s, o) => s + o.hl, 0);
+    const value30 = orders.filter((o) => o.daysAgo <= 30 && o.status !== 'Geannuleerd').reduce((s, o) => s + o.value, 0);
+    const brandNames = Object.values(KM.BRAND_DEFS).map((b) => b.name);
+    const chip = Object.fromEntries(Object.values(KM.BRAND_DEFS).map((b) => [b.name, b.chip]));
     main.innerHTML = `<div class="view">
-      ${viewHeader(`Orderbeheer — ${esc(d.def.name)}`, esc(d.def.copy.ordersSub),
+      ${viewHeader('Orderbeheer — Keymerch', 'Centrale orderafhandeling over alle merken. Filter op merk voor focus, of gebruik de brand switcher.',
         '<button class="btn"><i data-lucide="download"></i>Export</button><button class="btn btn-primary"><i data-lucide="plus"></i>Nieuwe order</button>')}
       ${kpiRow([
-        { label: 'Open orders', value: String(open.length), unit: '', delta: null, deltaLabel: 'te verwerken', icon: 'package' },
+        { label: 'Open orders', value: String(open.length), unit: '', delta: null, deltaLabel: 'alle merken', icon: 'package' },
         { label: 'Volume onderweg', value: fmt.dec(inTransitHL, 1), unit: 'HL', delta: null, deltaLabel: 'status: in levering', icon: 'truck' },
         { label: 'Orderwaarde 30 dgn', value: fmt.eur(value30), unit: '', delta: 6.4, deltaLabel: 'vs. vorige periode', icon: 'euro' },
         { label: 'Leverbetrouwbaarheid', value: '96,8', unit: '%', delta: 0.7, deltaLabel: 'pt · on-time in-full', deltaAbs: true, icon: 'badge-check' },
       ])}
+      ${agentStrip(d)}
       <div class="split-view">
         <div id="tbl-orders"></div>
         <div class="card detail-pane" id="order-detail"></div>
@@ -519,27 +629,28 @@
     const table = new DataTable($('#tbl-orders'), {
       columns: [
         { key: 'id', label: 'Order', sortable: true, render: (r) => `<span class="td-strong">${esc(r.id)}</span><span class="td-sub">${esc(r.date)}</span>` },
+        { key: 'brand', label: 'Merk', sortable: true, render: (r) => `<span class="legend-item"><span class="brand-dot" style="--dot:${chip[r.brand] || 'var(--text-3)'}"></span>${esc(r.brand)}</span>` },
         { key: 'outlet', label: 'Outlet', sortable: true, render: (r) => `${esc(r.outlet)}<span class="td-sub">${esc(r.city)}</span>` },
         { key: 'segment', label: 'Kanaal', sortable: true, render: (r) => `<span class="badge ${r.segment === 'On-Trade' ? 'badge-accent' : 'badge-neutral'}">${r.segment}</span>` },
         { key: 'hl', label: 'HL', sortable: true, num: true, render: (r) => fmt.dec(r.hl, 1) },
-        { key: 'kegs', label: 'Fusten', sortable: true, num: true, render: (r) => r.kegs || '<span class="muted">—</span>' },
         { key: 'value', label: 'Waarde', sortable: true, num: true, render: (r) => fmt.eur(r.value) },
         { key: 'status', label: 'Status', sortable: true, render: (r) => badge(r.status) },
       ],
-      rows: d.orders,
-      searchKeys: ['id', 'outlet', 'city', 'ref'],
+      rows: orders,
+      searchKeys: ['id', 'outlet', 'city', 'ref', 'brand'],
       searchPlaceholder: 'Zoek order, outlet of referentie…',
       filters: [
+        { key: 'brand', label: 'Merk', options: brandNames },
         { key: 'status', label: 'Status', options: KM.ORDER_STATUSES },
         { key: 'segment', label: 'Kanaal', options: ['On-Trade', 'Off-Trade'] },
       ],
       pageSize: 12,
-      getRowId: (r) => r.id,
-      onRowClick: (r) => { selectedOrderId = r.id; renderOrderDetail(d, r, '#order-detail', { scroll: true }); },
+      getRowId: (r) => r.key,
+      onRowClick: (r) => { selectedOrderId = r.key; renderOrderDetail(d, r, '#order-detail', { scroll: true }); },
       empty: { icon: 'package-x', title: 'Geen orders gevonden', msg: 'Geen orders voldoen aan de huidige zoekopdracht of filters.' },
     });
-    const initial = d.orders.find((o) => o.id === selectedOrderId) || d.orders[0];
-    if (initial) { table.select(initial.id); }
+    const initial = orders.find((o) => o.key === selectedOrderId) || orders[0];
+    if (initial) { table.select(initial.key); }
     renderOrderDetail(d, initial, '#order-detail');
   }
 
@@ -653,7 +764,8 @@
     const openOrders = h.orders.filter((o) => !['Geleverd', 'Geannuleerd'].includes(o.status));
     main.innerHTML = `<div class="view">
       ${viewHeader(`${esc(h.outlet)} — ${esc(h.city)}`, esc(d.def.copy.horecaWelcome),
-        '<button class="btn btn-primary" id="go-shop"><i data-lucide="shopping-cart"></i>Nieuwe bestelling</button>')}
+        '<button class="btn" id="btn-scan"><i data-lucide="qr-code"></i>Scan fust</button><button class="btn btn-primary" id="go-shop"><i data-lucide="shopping-cart"></i>Nieuwe bestelling</button>')}
+      ${agentStrip(d)}
       ${kpiRow([
         { label: 'Openstaande orders', value: String(openOrders.length), unit: '', delta: null, deltaLabel: 'in behandeling of onderweg', icon: 'package' },
         { label: 'Fusten in bezit', value: String(h.kegsOut), unit: '', delta: null, deltaLabel: 'retour bij volgende levering', icon: 'cylinder' },
@@ -696,6 +808,7 @@
       { label: 'Afname', data: d.monthly.map((m) => +(m.total * scale).toFixed(1)), colorVar: '--series-1' },
     ]);
     $('#go-shop').addEventListener('click', () => setView('shop'));
+    $('#btn-scan').addEventListener('click', () => openQrScan(d));
   }
 
   function cartCount() { return Object.values(state.cart).reduce((s, q) => s + q, 0); }
@@ -806,6 +919,7 @@
         h.orders.unshift(newOrder);
         state.cart = {};
         state.orderNote = `Ordernummer ${newOrder.id} · ${fmt.eur(newOrder.value)}`;
+        toast('Bestelling geplaatst', `${newOrder.id} · levering ${h.nextDelivery}`, 'good');
         renderCart();
         renderCatalog();
         renderSidebarNav();
@@ -926,6 +1040,182 @@
   }
 
   // =========================================================
+  // AI-agent: gesimuleerde 24/7 inzichten, alerts & chatbot
+  // =========================================================
+  const AI_KINDS = { crit: 'trending-down', warn: 'triangle-alert', good: 'circle-check-big', info: 'lightbulb' };
+
+  function agentSignals(d) {
+    const env = state.env;
+    if (env === 'insights') {
+      const worst = d.outlets.filter((o) => o.status === 'Actief').reduce((a, b) => (b.trend < a.trend ? b : a));
+      const best = d.def.campaigns.filter((c) => c.status === 'Actief' && c.uplift).reduce((a, b) => (b.uplift > a.uplift ? b : a));
+      const focus = { heineken: 'On-Trade volume loopt voor op vorig jaar — activatiedruk vasthouden in het terrasseizoen.', duvel: 'Marge per HL stijgt; premium placements renderen — kwaliteit boven volume blijft het advies.', bavaria: 'Alcoholvrij groeit het hardst van het portfolio — extra schapruimte voor 0.0% loont.' }[state.brand];
+      return [
+        { kind: 'crit', text: `Rotatie bij <strong>${esc(worst.name)}</strong> (${esc(worst.city)}) daalt ${fmt.dec(Math.abs(worst.trend))}% — agent adviseert een activatiebezoek.` },
+        { kind: 'good', text: `<strong>${esc(best.name)}</strong> levert +${fmt.dec(best.uplift)}% uplift — overweeg uitbreiding naar vergelijkbare outlets.` },
+        { kind: 'info', text: focus },
+      ];
+    }
+    if (env === 'orders') {
+      const orders = allOrders();
+      const pending = orders.filter((o) => o.status === 'In behandeling');
+      const oldest = pending.reduce((a, b) => (b.daysAgo > (a?.daysAgo ?? -1) ? b : a), null);
+      return [
+        { kind: 'warn', text: `<strong>${d.kegs.fleet.overdue} outlets</strong> hebben fusten langer dan 60 dagen uitstaan — retourrit inplannen bespaart emballagekosten.` },
+        oldest ? { kind: 'crit', text: `Order <strong>${esc(oldest.id)}</strong> (${esc(oldest.brand || '')}) wacht al ${oldest.daysAgo} dagen op bevestiging.` } : null,
+        { kind: 'info', text: `${pending.length} orders in behandeling over alle merken — piek verwacht rond de vaste leverdagen.` },
+      ].filter(Boolean);
+    }
+    const h = d.horeca;
+    return [
+      { kind: 'info', text: `Uw volgende levering staat gepland op <strong>${esc(h.nextDelivery)}</strong> — bestel vóór 17:00 om mee te gaan.` },
+      { kind: 'warn', text: `U heeft <strong>${h.kegsOut} fusten</strong> in bezit. Scan ze bij retour, dan verrekenen we het emballagesaldo direct.` },
+      h.openCampaigns[0] ? { kind: 'good', text: `Actie <strong>${esc(h.openCampaigns[0].name)}</strong> past bij uw zaak — aanmelden kan via Assortiment & acties.` } : null,
+    ].filter(Boolean);
+  }
+
+  function agentStrip(d) {
+    const s = agentSignals(d)[0];
+    if (!s) return '';
+    return `<div class="agent-strip">
+      <span class="as-icon"><i data-lucide="bot"></i></span>
+      <span><strong>AI-agent:</strong> ${s.text}</span>
+      <button class="btn btn-sm" data-open-agent><i data-lucide="message-square"></i>Open agent</button>
+    </div>`;
+  }
+
+  const AI_CHIPS = {
+    insights: ['Grootste dalers', 'Beste campagne', 'Kanaalverdeling'],
+    orders: ['Achterstallige fusten', 'Openstaande orders', 'Nieuwe verzoeken'],
+    horeca: ['Volgende levering', 'Fusten retour', 'Lopende acties'],
+  };
+
+  function aiTime() { return new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }); }
+
+  function aiAddMsg(role, html, meta) {
+    const body = $('#ai-body');
+    const el = document.createElement('div');
+    el.className = `ai-msg ${role}`;
+    el.innerHTML = `<div class="bubble">${html}</div><div class="msg-meta">${esc(meta || aiTime())}</div>`;
+    body.appendChild(el);
+    body.scrollTop = body.scrollHeight;
+    refreshIcons(body);
+    return el;
+  }
+
+  function aiGreeting(d) {
+    const name = { insights: 'Insights-agent', orders: 'Order-agent', horeca: 'Horeca-assistent' }[state.env];
+    const tone = {
+      heineken: `Goedendag. Ik ben uw ${name} voor Heineken en monitor volume, distributie en activaties — 24/7.`,
+      duvel: `Welkom. Als ${name} voor Duvel bewaak ik marge, rotatie en schenkkwaliteit van het craft-portfolio.`,
+      bavaria: `Hallo! Ik ben uw ${name} voor Bavaria. Ik hou acties, schaprotatie en 0.0% in de gaten. Waar kan ik mee helpen?`,
+    }[state.brand];
+    const signals = agentSignals(d).map((s) => `<li class="ai-alert ${s.kind}"><i data-lucide="${AI_KINDS[s.kind]}"></i><span>${s.text}</span></li>`).join('');
+    return `${esc(tone)}<ul style="list-style:none;padding-left:0">${signals}</ul>`;
+  }
+
+  function aiReply(d, q) {
+    const t = q.toLowerCase();
+    const h = d.horeca;
+    if (/(daler|rotatie|slechtst|outlet)/.test(t)) {
+      const worst = d.outlets.filter((o) => o.status === 'Actief').sort((a, b) => a.trend - b.trend).slice(0, 3);
+      return `De sterkste dalers in rotatie op dit moment:<ul>${worst.map((o) => `<li><strong>${esc(o.name)}</strong> (${esc(o.city)}): ${fmt.dec(o.trend)}% · ${fmt.dec(o.rotation)} ×/wk</li>`).join('')}</ul>Mijn advies: plan activatiebezoeken en check de tapkwaliteit.`;
+    }
+    if (/(campagne|actie|uplift|activatie)/.test(t)) {
+      const act = d.def.campaigns.filter((c) => c.status === 'Actief' && c.uplift).sort((a, b) => b.uplift - a.uplift).slice(0, 3);
+      return `Best presterende campagnes:<ul>${act.map((c) => `<li><strong>${esc(c.name)}</strong>: +${fmt.dec(c.uplift)}% uplift · ${fmt.int(c.outlets)} outlets</li>`).join('')}</ul>`;
+    }
+    if (/(kanaal|on-trade|off-trade|verdeling)/.test(t)) {
+      const on = d.monthly.reduce((s, m) => s + m.on, 0); const off = d.monthly.reduce((s, m) => s + m.off, 0);
+      const pct = Math.round((on / (on + off)) * 100);
+      return `Kanaalverdeling laatste 12 maanden voor ${esc(d.def.name)}: <strong>${pct}% On-Trade</strong> (${fmt.int(on)} HL) tegenover <strong>${100 - pct}% Off-Trade</strong> (${fmt.int(off)} HL).`;
+    }
+    if (/fust|keg|emballage|retour/.test(t)) {
+      if (state.env === 'horeca') return `U heeft <strong>${h.kegsOut} fusten</strong> in bezit. Scan de QR-code op het fust bij retour — het emballagesaldo wordt direct bijgewerkt.`;
+      return `Er staan <strong>${fmt.int(d.kegs.fleet.out)} fusten</strong> uit bij outlets; ${d.kegs.fleet.overdue} outlets zitten boven de 60 dagen. De gemiddelde omlooptijd is ${d.kegs.fleet.avgCycle} dagen.`;
+    }
+    if (/order|bestell|levering/.test(t)) {
+      if (state.env === 'horeca') return `Uw volgende levering: <strong>${esc(h.nextDelivery)}</strong>. U heeft ${h.orders.filter((o) => !['Geleverd', 'Geannuleerd'].includes(o.status)).length} openstaande orders. Bestellen kan tot 17:00 via “Bestellen”.`;
+      const open = allOrders().filter((o) => !['Geleverd', 'Geannuleerd'].includes(o.status));
+      return `Er staan <strong>${open.length} orders</strong> open over alle merken, waarvan ${open.filter((o) => o.status === 'In behandeling').length} nog te bevestigen. Het oudste onbevestigde order vindt u bovenaan Orderbeheer met status “In behandeling”.`;
+    }
+    if (/verzoek|assortiment/.test(t)) {
+      const fresh = d.requests.filter((r) => ['Nieuw', 'In review'].includes(r.status));
+      return `Er liggen <strong>${fresh.length} assortimentsverzoeken</strong> ter beoordeling. Gemiddelde verwachte rotatie: ${fmt.dec(d.requests.reduce((s, r) => s + r.expectedRotation, 0) / d.requests.length)} ×/wk.`;
+    }
+    if (/voorraad|prognose|dekking/.test(t)) {
+      const weekly = d.def.scale.ytdHL / 52;
+      return `De depotvoorraad dekt circa <strong>${fmt.dec(6.4, 1)} weken</strong> bij het huidige verbruik van ~${fmt.int(Math.round(weekly))} HL/wk. Zie Voorraadprognose voor de projectie per SKU.`;
+    }
+    if (/(hallo|hoi|help|hulp|wat kan)/.test(t)) {
+      return `Ik analyseer continu de ${esc(d.def.name)}-data. Vraag me bijvoorbeeld naar <strong>rotatie-dalers</strong>, <strong>campagne-uplift</strong>, <strong>kanaalverdeling</strong>, <strong>fusten</strong> of <strong>openstaande orders</strong>.`;
+    }
+    return `Daar heb ik nog geen kant-en-klare analyse voor. Probeer een vraag over <strong>rotatie</strong>, <strong>campagnes</strong>, <strong>fusten</strong>, <strong>orders</strong> of <strong>voorraad</strong> — of gebruik de suggesties hieronder.`;
+  }
+
+  function aiReset() {
+    const body = $('#ai-body');
+    if (!body) return;
+    body.innerHTML = '';
+    $('#ai-title').textContent = { insights: 'Insights-agent', orders: 'Order-agent', horeca: 'Horeca-assistent' }[state.env] + ' · ' + data().def.name;
+    $('#ai-chips').innerHTML = AI_CHIPS[state.env].map((c) => `<button class="ai-chip">${esc(c)}</button>`).join('');
+    $('#ai-chips').querySelectorAll('.ai-chip').forEach((b) => b.addEventListener('click', () => aiSend(b.textContent)));
+    aiAddMsg('agent', aiGreeting(data()));
+  }
+
+  function aiSend(text) {
+    const q = (text || $('#ai-input').value).trim();
+    if (!q) return;
+    $('#ai-input').value = '';
+    aiAddMsg('user', esc(q));
+    const typing = aiAddMsg('agent', '<span class="typing"><i></i><i></i><i></i></span>', '…');
+    setTimeout(() => {
+      typing.querySelector('.bubble').innerHTML = aiReply(data(), q);
+      typing.querySelector('.msg-meta').textContent = aiTime();
+      $('#ai-body').scrollTop = $('#ai-body').scrollHeight;
+      refreshIcons();
+    }, 750 + Math.random() * 550);
+  }
+
+  function aiOpen() {
+    state.aiOpen = true;
+    $('#ai-drawer').hidden = false;
+    if (!$('#ai-body').childElementCount) aiReset();
+    $('#ai-input').focus();
+  }
+  function aiClose() { state.aiOpen = false; $('#ai-drawer').hidden = true; }
+
+  // =========================================================
+  // QR-scan flow (horeca): scan → statusupdate → toast
+  // =========================================================
+  let qrTimer = null;
+  function qrClose() {
+    clearTimeout(qrTimer);
+    $('#qr-modal').hidden = true;
+  }
+  function openQrScan(d) {
+    const frame = $('#qr-frame');
+    frame.classList.remove('success');
+    $('#qr-success').hidden = true;
+    $('#qr-status').innerHTML = 'Richt de camera op de QR-code op het fust…';
+    $('#qr-modal').hidden = false;
+    clearTimeout(qrTimer);
+    qrTimer = setTimeout(() => {
+      const kegId = 'HK-' + (4700 + Math.floor(Math.random() * 300));
+      frame.classList.add('success');
+      $('#qr-success').hidden = false;
+      $('#qr-status').innerHTML = `<strong>Fust ${kegId} herkend</strong><br>Retour geregistreerd voor ${esc(d.horeca.outlet)}`;
+      refreshIcons();
+      d.horeca.kegsOut = Math.max(0, d.horeca.kegsOut - 1);
+      qrTimer = setTimeout(() => {
+        qrClose();
+        toast('Fust retour gemeld', `${kegId} verwerkt · emballagesaldo bijgewerkt`, 'good');
+        if (state.env === 'horeca' && state.view === 'home') renderView();
+      }, 1700);
+    }, 2400);
+  }
+
+  // =========================================================
   // Init
   // =========================================================
   document.querySelectorAll('.env-btn').forEach((b) => b.addEventListener('click', () => { setEnv(b.dataset.env); closeSidebar(); }));
@@ -945,5 +1235,41 @@
   });
   $('#sidebar-scrim').addEventListener('click', closeSidebar);
 
-  render(true);
+  // Login hub: 3 rollen
+  function login(role) {
+    state.loggedIn = true;
+    state.env = role;
+    state.view = NAV[role].defaultView;
+    $('#login-hub').classList.add('app-hidden');
+    $('#app').classList.remove('app-hidden');
+    $('#ai-body').innerHTML = '';
+    render(true);
+    const [name] = data().def.persona[role];
+    toast('Ingelogd', `Welkom terug, ${name} — de AI-agent kijkt met u mee.`, 'info');
+  }
+  function logout() {
+    state.loggedIn = false;
+    aiClose();
+    qrClose();
+    KMCharts.destroyAll();
+    $('#app').classList.add('app-hidden');
+    $('#login-hub').classList.remove('app-hidden');
+  }
+  document.querySelectorAll('.role-card').forEach((b) => b.addEventListener('click', () => login(b.dataset.role)));
+  $('#back-btn').addEventListener('click', logout);
+
+  // AI-agent
+  $('#ai-fab').addEventListener('click', () => (state.aiOpen ? aiClose() : aiOpen()));
+  $('#ai-close').addEventListener('click', aiClose);
+  $('#ai-send').addEventListener('click', () => aiSend());
+  $('#ai-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') aiSend(); });
+  main.addEventListener('click', (e) => {
+    if (e.target.closest('[data-open-agent]')) aiOpen();
+  });
+
+  // QR-scan
+  $('#qr-close').addEventListener('click', qrClose);
+  $('#qr-modal').addEventListener('click', (e) => { if (e.target === $('#qr-modal')) qrClose(); });
+
+  refreshIcons();
 })();
