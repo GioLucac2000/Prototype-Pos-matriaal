@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="nl" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keymerch — POS Visibility Platform</title>
+  <script src="/vendor/chart.umd.min.js"></script>
+  <script src="/vendor/lucide.min.js"></script>
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230176D3'/><text x='16' y='22' font-family='Inter,sans-serif' font-size='16' font-weight='700' fill='white' text-anchor='middle'>K</text></svg>">
+</head>
+<body>
+  <div class="app" id="app">
+
+    <!-- ===== Sidebar ===== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark">K</div>
+        <div class="logo-text">
+          <span class="logo-name">Keymerch</span>
+          <span class="logo-sub">POS Visibility Platform</span>
+        </div>
+      </div>
+
+      <div class="env-switcher" id="env-switcher" role="tablist" aria-label="Omgeving">
+        <button class="env-btn" data-env="insights" role="tab">
+          <i data-lucide="bar-chart-3"></i><span>Insights</span>
+        </button>
+        <button class="env-btn" data-env="orders" role="tab">
+          <i data-lucide="package"></i><span>Order Management</span>
+        </button>
+        <button class="env-btn" data-env="horeca" role="tab">
+          <i data-lucide="beer"></i><span>Horeca Portaal</span>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav" id="sidebar-nav" aria-label="Hoofdnavigatie"></nav>
+
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <div class="avatar" id="user-avatar">MB</div>
+          <div class="user-meta">
+            <span class="user-name" id="user-name">M. Bakker</span>
+            <span class="user-role" id="user-role">Brand Insights</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="sidebar-scrim" id="sidebar-scrim"></div>
+
+    <!-- ===== Main column ===== -->
+    <div class="main-col">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menu-btn" aria-label="Menu">
+          <i data-lucide="menu"></i>
+        </button>
+        <div class="topbar-context">
+          <span class="topbar-env" id="topbar-env">Insights</span>
+          <i data-lucide="chevron-right" class="crumb-sep"></i>
+          <span class="topbar-view" id="topbar-view">Overzicht</span>
+        </div>
+        <div class="topbar-actions">
+          <div class="brand-switcher" id="brand-switcher" role="tablist" aria-label="Merk">
+            <button class="brand-btn" data-brand="heineken" role="tab"><span class="brand-dot" style="--dot:#037A3B"></span>Heineken</button>
+            <button class="brand-btn" data-brand="duvel" role="tab"><span class="brand-dot" style="--dot:#B3202C"></span>Duvel</button>
+            <button class="brand-btn" data-brand="bavaria" role="tab"><span class="brand-dot" style="--dot:#1B4B9B"></span>Bavaria</button>
+          </div>
+          <button class="icon-btn" id="theme-toggle" aria-label="Thema wisselen">
+            <i data-lucide="moon"></i>
+          </button>
+        </div>
+      </header>
+
+      <main class="main-content" id="main-content"></main>
+    </div>
+  </div>
+
+  <script src="/js/data.js"></script>
+  <script src="/js/charts.js"></script>
+  <script src="/js/components.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
