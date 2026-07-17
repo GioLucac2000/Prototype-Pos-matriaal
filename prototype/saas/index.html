@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="nl" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keymerch — POS Materiaal Platform</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="saas.css">
+  <script src="vendor/lucide.min.js"></script>
+</head>
+<body>
+  <div class="hub">
+    <button class="icon-btn hub-theme" data-theme-toggle aria-label="Thema wisselen"><i data-lucide="moon"></i></button>
+
+    <div class="hub-logo">Keymerch</div>
+    <div class="hub-sub">POS Materiaal Platform</div>
+
+    <div class="hub-cards">
+      <div class="hub-card" style="--card-accent:#2563eb">
+        <span class="hub-icon"><i data-lucide="scan-line"></i></span>
+        <h2>Horeca Portaal</h2>
+        <p>Scan POS-materiaal · Bekijk jouw locatie · Meld status</p>
+        <a class="hub-cta" href="horeca.html?role=horeca&demo=true">Inloggen als Horecaondernemer <i data-lucide="arrow-right"></i></a>
+      </div>
+
+      <div class="hub-card" style="--card-accent:#059669">
+        <span class="hub-icon"><i data-lucide="bar-chart-2"></i></span>
+        <h2>Merkhouder Insights</h2>
+        <p>Inzichten per merk · Voorraadprognose · AI advies</p>
+        <a class="hub-cta" href="insights.html?role=brand&demo=true">Inloggen als Merkhouder <i data-lucide="arrow-right"></i></a>
+      </div>
+
+      <div class="hub-card" style="--card-accent:#d97706">
+        <span class="hub-icon"><i data-lucide="settings-2"></i></span>
+        <h2>Keymerch Beheer</h2>
+        <p>Alle bestellingen · Alle merken · Platform overzicht</p>
+        <a class="hub-cta" href="orders.html?role=admin&demo=true">Inloggen als Keymerch Admin <i data-lucide="arrow-right"></i></a>
+      </div>
+    </div>
+
+    <div class="hub-foot">Demo versie — geen echte data</div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const root = document.documentElement;
+      const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      document.querySelector('[data-theme-toggle]').innerHTML =
+        `<i data-lucide="${next === 'dark' ? 'sun' : 'moon'}"></i>`;
+      lucide.createIcons();
+    });
+  </script>
+</body>
+</html>
