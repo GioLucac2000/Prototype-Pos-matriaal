@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="nl" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keymerch — Order Beheer</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="saas.css">
+  <script src="vendor/lucide.min.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
+  <style>:root { --role-accent: #d97706; }</style>
+</head>
+<body>
+  <header id="navbar"></header>
+
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">Keymerch Beheer — Platform overzicht</h1>
+        <p class="page-sub">Alle bestellingen over alle merken, met operationele AI-intelligentie voor het orderteam.</p>
+      </div>
+    </div>
+
+    <!-- ===== AI Operaties ===== -->
+    <h2 class="section-title"><i data-lucide="bot"></i>AI Operaties</h2>
+
+    <!-- Widget 3: KPI summary balk -->
+    <div class="summary-bar">
+      <div class="summary-item"><div class="sv red">8</div><div class="sl">orders wachten &gt;3 dagen</div></div>
+      <div class="summary-item"><div class="sv green">94%</div><div class="sl">op tijd deze maand</div></div>
+      <div class="summary-item"><div class="sv blue">3</div><div class="sl">nieuwe locaties geregistreerd</div></div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:16px">
+      <!-- Widget 1: Urgentielijst -->
+      <section class="card" style="margin-bottom:0">
+        <div class="card-header"><div><div class="card-title">Acties vereist vandaag</div><div class="card-sub">Door AI geprioriteerd op wachttijd en risico</div></div></div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>Bestelling</th><th>Merk</th><th>Wachttijd</th><th>Reden (AI)</th><th></th></tr></thead>
+            <tbody id="urgent-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Widget 2: Voorspelling -->
+      <section class="card" style="margin-bottom:0">
+        <div class="card-header"><div><div class="card-title">Verwachte bestellingen komende 4 weken</div><div class="card-sub">AI-voorspelling vs. dezelfde periode vorig jaar</div></div></div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chart-forecast"></canvas></div></div>
+      </section>
+    </div>
+
+    <!-- ===== Bestellingen ===== -->
+    <h2 class="section-title"><i data-lucide="package"></i>Alle bestellingen</h2>
+    <section class="card">
+      <div class="toolbar">
+        <input type="search" id="order-search" placeholder="Zoek bestelling of locatie…" aria-label="Zoeken">
+        <select id="order-brand" aria-label="Merk"><option value="">Merk: alle</option><option>Heineken</option><option>Duvel</option><option>Bavaria</option></select>
+        <select id="order-status" aria-label="Status">
+          <option value="">Status: alle</option>
+          <option>Nieuw</option><option>Wacht op bevestiging</option><option>Verificatie nodig</option>
+          <option>Wacht op depot</option><option>In behandeling</option><option>Verzonden</option><option>Geleverd</option>
+        </select>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th>Bestelling</th><th>Merk</th><th>Locatie</th><th>Datum</th><th class="num">Items</th><th>Status</th></tr></thead>
+          <tbody id="orders-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="data.js"></script>
+  <script src="shell.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      const { esc, toast } = Shell;
+      Shell.navbar(document.getElementById('navbar'), { portal: 'Keymerch Beheer' });
+
+      // ---------- Widget 1: urgentielijst ----------
+      document.getElementById('urgent-tbody').innerHTML = KMDATA.URGENT.map((u) => `
+        <tr>
+          <td><span class="td-strong">${esc(u.id)}</span></td>
+          <td>${esc(u.brand)}</td>
+          <td>${esc(u.wait)}</td>
+          <td>${esc(u.reason)}</td>
+          <td><button class="btn btn-sm" data-action="${esc(u.action)}">${esc(u.action)}</button></td>
+        </tr>`).join('');
+      document.querySelectorAll('[data-action]').forEach((b) =>
+        b.addEventListener('click', () => toast('Actie geregistreerd', b.dataset.action, 'info')));
+
+      // ---------- Widget 2: voorspelling (Chart.js) ----------
+      let forecastChart = null;
+      function renderForecast() {
+        const t = Shell.chartDefaults();
+        if (forecastChart) forecastChart.destroy();
+        forecastChart = new Chart(document.getElementById('chart-forecast'), {
+          type: 'line',
+          data: {
+            labels: ['Week 30', 'Week 31', 'Week 32', 'Week 33'],
+            datasets: [
+              {
+                label: 'Verwacht', data: [42, 38, 51, 47],
+                borderColor: t.ticks, backgroundColor: t.ticks,
+                borderDash: [6, 5], borderWidth: 2,
+                pointRadius: 3, pointHoverRadius: 5, tension: 0.25,
+              },
+              {
+                label: 'Vorig jaar zelfde periode', data: [35, 33, 44, 40],
+                borderColor: '#7EB3F2', backgroundColor: '#7EB3F2',
+                borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0.25,
+              },
+            ],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { position: 'bottom', labels: { color: t.text2, font: { family: 'Inter', size: 11.5 }, usePointStyle: true, boxWidth: 8, padding: 14 } },
+              tooltip: {
+                ...Shell.tooltipStyle(),
+                callbacks: {
+                  footer: (items) => items[0].label === 'Week 32' ? 'Week 32: +16% t.o.v. vorig jaar — zomerpiek verwacht' : '',
+                },
+              },
+            },
+            scales: {
+              x: { grid: { display: false }, border: { color: t.border }, ticks: { color: t.ticks, font: { family: 'Inter', size: 11 } } },
+              y: { grid: { color: t.grid, drawTicks: false }, border: { display: false }, ticks: { color: t.ticks, font: { family: 'Inter', size: 11 }, maxTicksLimit: 5 }, beginAtZero: true },
+            },
+          },
+        });
+      }
+      renderForecast();
+      document.addEventListener('themechange', renderForecast);
+
+      // ---------- Bestellingen-tabel ----------
+      const STATUS_BADGE = {
+        'Nieuw': 'badge-info', 'Wacht op bevestiging': 'badge-warn', 'Verificatie nodig': 'badge-warn',
+        'Wacht op depot': 'badge-warn', 'In behandeling': 'badge-info', 'Verzonden': 'badge-info', 'Geleverd': 'badge-good',
+      };
+      function renderOrders() {
+        const q = document.getElementById('order-search').value.trim().toLowerCase();
+        const brand = document.getElementById('order-brand').value;
+        const status = document.getElementById('order-status').value;
+        const rows = KMDATA.ORDERS.filter((o) =>
+          (!q || o.id.toLowerCase().includes(q) || o.location.toLowerCase().includes(q) || o.city.toLowerCase().includes(q)) &&
+          (!brand || o.brand === brand) &&
+          (!status || o.status === status));
+        document.getElementById('orders-tbody').innerHTML = rows.length ? rows.map((o) => `
+          <tr>
+            <td><span class="td-strong">${esc(o.id)}</span></td>
+            <td>${esc(o.brand)}</td>
+            <td><span class="td-strong">${esc(o.location)}</span><span class="td-sub">${esc(o.city)}</span></td>
+            <td>${esc(o.date)}</td>
+            <td class="num">${o.items}</td>
+            <td><span class="badge ${STATUS_BADGE[o.status] || 'badge-neutral'}">${esc(o.status)}</span></td>
+          </tr>`).join('')
+          : `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-3)">Geen bestellingen gevonden — pas je filters aan.</td></tr>`;
+      }
+      ['order-search', 'order-brand', 'order-status'].forEach((id) =>
+        document.getElementById(id).addEventListener('input', renderOrders));
+      renderOrders();
+
+      Shell.icons();
+    })();
+  </script>
+</body>
+</html>

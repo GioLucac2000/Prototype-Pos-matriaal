@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="nl" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keymerch — Merkhouder Inzichten</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="saas.css">
+  <script src="vendor/lucide.min.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
+  <style>:root { --role-accent: #059669; }</style>
+</head>
+<body>
+  <header id="navbar"></header>
+
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <h1 class="page-title" id="brand-title">Heineken — Merkhouder Inzichten</h1>
+        <p class="page-sub">POS-materiaal in het veld: scan-activiteit, staat en vermissing per locatie, met AI-marktintelligentie.</p>
+      </div>
+      <div class="page-actions">
+        <div class="brand-switch" id="brand-switch">
+          <button data-brand="heineken" class="active"><span class="brand-dot" style="--dot:#037A3B"></span>Heineken</button>
+          <button data-brand="duvel"><span class="brand-dot" style="--dot:#B3202C"></span>Duvel</button>
+          <button data-brand="bavaria"><span class="brand-dot" style="--dot:#1B4B9B"></span>Bavaria</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== AI Marktintelligentie (boven de KPI-cards) ===== -->
+    <section class="ai-intel" id="ai-intel">
+      <div class="ai-intel-head">🤖 AI Marktintelligentie <span class="pulse-dot"></span></div>
+      <div id="intel-rows"></div>
+      <div class="ai-intel-foot">
+        <button class="btn btn-sm" id="report-btn"><i data-lucide="file-down"></i>Volledig AI rapport downloaden</button>
+      </div>
+    </section>
+
+    <!-- ===== KPI-cards ===== -->
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <!-- ===== Charts ===== -->
+    <div class="grid-2">
+      <section class="card" style="margin-bottom:0">
+        <div class="card-header"><div><div class="card-title">Scan-activiteit per week</div><div class="card-sub">Aantal scans, laatste 8 weken</div></div></div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chart-scans"></canvas></div></div>
+      </section>
+      <section class="card" style="margin-bottom:0">
+        <div class="card-header"><div><div class="card-title">Staat van het materiaal</div><div class="card-sub">Verdeling actuele status (%)</div></div></div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chart-status"></canvas></div></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="data.js"></script>
+  <script src="shell.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      const { esc, toast } = Shell;
+      Shell.navbar(document.getElementById('navbar'), { portal: 'Merkhouder Insights' });
+
+      let brand = 'heineken';
+      let charts = [];
+      const BADGE_KIND = { 'Positief': 'badge-good', 'Let op': 'badge-warn', 'Actie': 'badge-info' };
+
+      function render() {
+        const b = KMDATA.BRANDS[brand];
+        document.getElementById('brand-title').textContent = `${b.name} — Merkhouder Inzichten`;
+        document.getElementById('ai-intel').style.setProperty('--brand-color', b.color);
+
+        document.getElementById('intel-rows').innerHTML = b.intel.map((r) => `
+          <div class="ai-intel-row">
+            <span>${r.icon}</span>
+            <span>${esc(r.text)}</span>
+            <span class="badge ${BADGE_KIND[r.badge] || 'badge-neutral'}">${esc(r.badge)}</span>
+          </div>`).join('');
+
+        document.getElementById('kpi-grid').innerHTML = b.kpis.map((k) => `
+          <div class="kpi-card">
+            <div class="kpi-label"><i data-lucide="${k.icon}"></i>${esc(k.label)}</div>
+            <div class="kpi-value">${esc(k.value)}${k.unit ? `<span class="unit">${esc(k.unit)}</span>` : ''}</div>
+            <div class="kpi-foot">${k.foot}</div>
+          </div>`).join('');
+
+        // Charts opnieuw opbouwen (thema- en merk-afhankelijke kleuren)
+        charts.forEach((c) => c.destroy());
+        charts = [];
+        const t = Shell.chartDefaults();
+        const weeks = ['wk 22', 'wk 23', 'wk 24', 'wk 25', 'wk 26', 'wk 27', 'wk 28', 'wk 29'];
+
+        charts.push(new Chart(document.getElementById('chart-scans'), {
+          type: 'bar',
+          data: {
+            labels: weeks,
+            datasets: [{
+              label: 'Scans', data: b.scansPerWeek,
+              backgroundColor: b.color,
+              borderRadius: 4, barPercentage: 0.55, categoryPercentage: 0.8,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: Shell.tooltipStyle() },
+            scales: {
+              x: { grid: { display: false }, border: { color: t.border }, ticks: { color: t.ticks, font: { family: 'Inter', size: 11 } } },
+              y: { grid: { color: t.grid, drawTicks: false }, border: { display: false }, ticks: { color: t.ticks, font: { family: 'Inter', size: 11 }, maxTicksLimit: 5 }, beginAtZero: true },
+            },
+          },
+        }));
+
+        const s = b.statusSplit;
+        charts.push(new Chart(document.getElementById('chart-status'), {
+          type: 'doughnut',
+          data: {
+            labels: ['Goede staat', 'Lichte slijtage', 'Reparatie nodig', 'Vermist'],
+            datasets: [{
+              data: [s.goed, s.slijtage, s.reparatie, s.vermist],
+              backgroundColor: ['#059669', '#d97706', '#7c7c78', '#dc2626'],
+              borderColor: t.surface, borderWidth: 2, hoverOffset: 5,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, cutout: '68%',
+            plugins: {
+              legend: { position: 'bottom', labels: { color: t.text2, font: { family: 'Inter', size: 11.5 }, usePointStyle: true, boxWidth: 8, padding: 14 } },
+              tooltip: { ...Shell.tooltipStyle(), callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.parsed}%` } },
+            },
+          },
+        }));
+
+        Shell.icons();
+      }
+
+      document.getElementById('brand-switch').querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          brand = btn.dataset.brand;
+          document.querySelectorAll('#brand-switch button').forEach((x) => x.classList.toggle('active', x === btn));
+          render();
+        });
+      });
+
+      document.getElementById('report-btn').addEventListener('click', () =>
+        toast('Rapport wordt voorbereid', 'In een echte omgeving wordt dit als PDF naar jouw e-mail gestuurd.', 'info'));
+
+      document.addEventListener('themechange', render);
+      render();
+    })();
+  </script>
+</body>
+</html>

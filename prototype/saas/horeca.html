@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="nl" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keymerch — Horeca Portaal</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="saas.css">
+  <script src="vendor/lucide.min.js"></script>
+  <style>:root { --role-accent: #2563eb; }</style>
+</head>
+<body>
+  <header id="navbar"></header>
+
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <h1 class="page-title" id="loc-title">Café De Kroon — Utrecht Centrum</h1>
+        <p class="page-sub">Beheer het POS-materiaal op jouw locatie: scan items, meld de status en houd alles up-to-date.</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary btn-lg" id="scan-btn"><i data-lucide="camera"></i>Scan POS-materiaal</button>
+      </div>
+    </div>
+
+    <!-- ===== AI Assistent widget (collapsible) ===== -->
+    <section class="card ai-widget" id="ai-widget">
+      <div class="ai-widget-head" id="ai-toggle" role="button" aria-expanded="false" tabindex="0">
+        <span class="ai-widget-title">🤖 AI Assistent — actief <span class="pulse-dot"></span></span>
+        <i data-lucide="chevron-down" class="chev"></i>
+      </div>
+      <div class="ai-widget-body">
+        <div class="ai-alert">
+          <span>📦 3 items bij jouw locatie zijn al 47 dagen niet gescand</span>
+          <button class="btn btn-sm" data-mock="Retourverzoek gestart">Retourverzoek starten →</button>
+        </div>
+        <div class="ai-alert">
+          <span>🔔 Heineken Display Unit verloopt over 12 dagen</span>
+          <button class="btn btn-sm" data-mock="Verlenging aangevraagd">Verlenging aanvragen →</button>
+        </div>
+        <div class="ai-chat">
+          <div class="ai-chat-inputrow">
+            <input type="text" id="chat-input" placeholder="Stel een vraag over jouw materiaal...">
+            <button class="btn btn-primary" id="chat-send"><i data-lucide="send"></i></button>
+          </div>
+          <div class="ai-chat-window" id="chat-window"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Materiaaltabel ===== -->
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">POS-materiaal op jouw locatie</div>
+          <div class="card-sub" id="table-sub">12 items · laatste scan 3 dagen geleden</div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <input type="search" id="item-search" placeholder="Zoek artikel of serienummer…" aria-label="Zoeken">
+        <select id="item-brand" aria-label="Merk"><option value="">Merk: alle</option><option>Heineken</option><option>Duvel</option><option>Bavaria</option></select>
+        <select id="item-status" aria-label="Status">
+          <option value="">Status: alle</option>
+          <option>Aanwezig — goede staat</option>
+          <option>Aanwezig — lichte slijtage</option>
+          <option>Aanwezig — reparatie nodig</option>
+          <option>Retour gemeld</option>
+          <option>Vermist</option>
+        </select>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr>
+            <th>Artikel</th><th>Merk</th><th>In gebruik sinds</th><th class="num">Laatste scan</th><th>Status</th>
+          </tr></thead>
+          <tbody id="items-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== QR Scan modal ===== -->
+  <div class="modal-scrim" id="scan-modal" hidden>
+    <div class="qr-modal" role="dialog" aria-label="POS-materiaal scannen">
+      <div class="qr-head">
+        <span>📷 Scan POS-materiaal</span>
+        <button class="icon-btn" id="scan-close" aria-label="Sluiten"><i data-lucide="x"></i></button>
+      </div>
+      <div class="qr-body" id="scan-step1">
+        <div class="scan-area"><div class="scan-line"></div></div>
+        <div class="scan-caption">Zoeken naar QR-code...</div>
+      </div>
+      <div class="qr-body" id="scan-step2" hidden>
+        <div class="qr-result-icon"><i data-lucide="circle-check-big"></i></div>
+        <strong>QR-code herkend</strong>
+        <div class="qr-details">
+          <div><span class="k">Artikel</span><span class="v">Heineken Tap Display Unit Premium</span></div>
+          <div><span class="k">Serienummer</span><span class="v">KM-2024-HEI-0042</span></div>
+          <div><span class="k">Locatie</span><span class="v">Café De Kroon — Utrecht Centrum</span></div>
+          <div><span class="k">In gebruik sinds</span><span class="v">12 maart 2024</span></div>
+          <div><span class="k">Laatste scan</span><span class="v">14 dagen geleden</span></div>
+        </div>
+        <div class="qr-statusrow">
+          <label for="scan-status">Huidige status:</label>
+          <select id="scan-status">
+            <option value="aanwezig">✓ Aanwezig — goede staat</option>
+            <option value="slijtage">⚠️ Aanwezig — lichte slijtage</option>
+            <option value="reparatie">🔧 Aanwezig — reparatie nodig</option>
+            <option value="retour">📦 Retour gemeld</option>
+            <option value="vermist">✗ Vermist</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="scan-save" style="width:100%;justify-content:center"><i data-lucide="check"></i>Status opslaan</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="shell.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      const { esc, toast } = Shell;
+      Shell.navbar(document.getElementById('navbar'), { portal: 'Horeca Portaal' });
+
+      // ---------- Items-tabel met zoeken/filters ----------
+      const items = KMDATA.HORECA_ITEMS.map((x) => ({ ...x }));
+      const STATUS_BADGE = {
+        'Aanwezig — goede staat': 'badge-good',
+        'Aanwezig — lichte slijtage': 'badge-warn',
+        'Aanwezig — reparatie nodig': 'badge-warn',
+        'Retour gemeld': 'badge-info',
+        'Vermist': 'badge-crit',
+      };
+      function renderTable() {
+        const q = document.getElementById('item-search').value.trim().toLowerCase();
+        const brand = document.getElementById('item-brand').value;
+        const status = document.getElementById('item-status').value;
+        const rows = items.filter((it) =>
+          (!q || it.item.toLowerCase().includes(q) || it.sn.toLowerCase().includes(q)) &&
+          (!brand || it.brand === brand) &&
+          (!status || it.status === status));
+        document.getElementById('items-tbody').innerHTML = rows.length ? rows.map((it) => `
+          <tr data-sn="${esc(it.sn)}">
+            <td><span class="td-strong">${esc(it.item)}</span><span class="td-sub">${esc(it.sn)}</span></td>
+            <td>${esc(it.brand)}</td>
+            <td>${esc(it.since)}</td>
+            <td class="num">${it.lastScan === 0 ? '<strong style="color:var(--good-text)">vandaag</strong>' : it.lastScan > 45 ? `<strong style="color:var(--red)">${it.lastScan} dgn geleden</strong>` : it.lastScan + ' dgn geleden'}</td>
+            <td><span class="badge ${STATUS_BADGE[it.status] || 'badge-neutral'}">${esc(it.status)}</span></td>
+          </tr>`).join('')
+          : `<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-3)">Geen items gevonden — pas je zoekopdracht of filters aan.</td></tr>`;
+      }
+      ['item-search', 'item-brand', 'item-status'].forEach((id) =>
+        document.getElementById(id).addEventListener('input', renderTable));
+      renderTable();
+
+      // ---------- AI widget: collapsible ----------
+      const widget = document.getElementById('ai-widget');
+      const toggle = document.getElementById('ai-toggle');
+      function flip() {
+        widget.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', widget.classList.contains('open'));
+      }
+      toggle.addEventListener('click', flip);
+      toggle.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } });
+
+      document.querySelectorAll('[data-mock]').forEach((b) =>
+        b.addEventListener('click', (e) => { e.stopPropagation(); toast(b.dataset.mock, 'Demo-actie — in een echte omgeving wordt dit verwerkt.', 'info'); }));
+
+      // ---------- Chatbot ----------
+      const REPLIES = [
+        [/terugsturen|retour/i, `Op basis van je locatiedata adviseer ik om de volgende items terug te sturen:\n• KM-HEI-0042 — Heineken Tap Display (47 dagen inactief)\n• KM-BAV-0019 — Bavaria Parasol (62 dagen inactief)\nGebruik de scanknop om ze te markeren als 'Retour gemeld'.`],
+        [/status|materiaal/i, `Jouw locatie heeft momenteel 12 actieve POS-items.\n9 in goede staat ✓ · 2 lichte slijtage ⚠️ · 1 vermist ✗\nLaatste scan: 3 dagen geleden door jou.`],
+        [/bezorg|nieuw|wanneer/i, `Er staat momenteel geen nieuwe levering gepland voor jouw locatie.\nDe meest recente bestelling (#KM-2024-091) is in behandeling bij Keymerch.\nVerwachte leverdatum: week 31 (28 juli – 1 augustus).`],
+      ];
+      const FALLBACK = `Ik begrijp je vraag niet helemaal. Probeer: 'Wat moet ik terugsturen?', 'Wat is de status van mijn materiaal?' of 'Wanneer wordt er geleverd?'`;
+
+      const win = document.getElementById('chat-window');
+      function bubble(kind, text) {
+        const el = document.createElement('div');
+        el.className = `chat-bubble ${kind}`;
+        el.textContent = text;
+        win.appendChild(el);
+        win.scrollTop = win.scrollHeight;
+      }
+      function send() {
+        const input = document.getElementById('chat-input');
+        const q = input.value.trim();
+        if (!q) return;
+        input.value = '';
+        bubble('user', q);
+        const match = REPLIES.find(([re]) => re.test(q));
+        setTimeout(() => bubble('ai', match ? match[1] : FALLBACK), 450);
+      }
+      document.getElementById('chat-send').addEventListener('click', send);
+      document.getElementById('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+
+      // ---------- QR-scan flow ----------
+      const modal = document.getElementById('scan-modal');
+      const step1 = document.getElementById('scan-step1');
+      const step2 = document.getElementById('scan-step2');
+      let scanTimer = null;
+
+      document.getElementById('scan-btn').addEventListener('click', () => {
+        step1.hidden = false;
+        step2.hidden = true;
+        modal.hidden = false;
+        clearTimeout(scanTimer);
+        scanTimer = setTimeout(() => {
+          step1.hidden = true;
+          step2.hidden = false;
+          Shell.icons();
+        }, 1500);
+      });
+      function closeModal() { clearTimeout(scanTimer); modal.hidden = true; }
+      document.getElementById('scan-close').addEventListener('click', closeModal);
+      modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+      const STATUS_LABELS = {
+        aanwezig: 'Aanwezig — goede staat',
+        slijtage: 'Aanwezig — lichte slijtage',
+        reparatie: 'Aanwezig — reparatie nodig',
+        retour: 'Retour gemeld',
+        vermist: 'Vermist',
+      };
+      document.getElementById('scan-save').addEventListener('click', () => {
+        const val = document.getElementById('scan-status').value;
+        const label = STATUS_LABELS[val];
+        const item = items.find((it) => it.sn === 'KM-2024-HEI-0042');
+        if (item) { item.status = label; item.lastScan = 0; }
+        renderTable();
+        closeModal();
+        toast('Scan verwerkt', `KM-2024-HEI-0042 → ${label}`, 'good');
+      });
+    })();
+  </script>
+</body>
+</html>
