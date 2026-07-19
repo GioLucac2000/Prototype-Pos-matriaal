@@ -538,12 +538,14 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 /* ============ Responsive ============ */
 @media (max-width: 900px) {
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grid-2 { grid-template-columns: 1fr; }
-  .summary-bar { grid-template-columns: 1fr; }
+  /* minmax(0,1fr) i.p.v. 1fr: grid-items met brede tabellen mogen krimpen,
+     zodat .table-scroll horizontaal scrollt in plaats van de pagina te verbreden */
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .summary-bar { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
-  .hub-cards { grid-template-columns: 1fr; }
-  .kpi-grid { grid-template-columns: 1fr; }
+  .hub-cards { grid-template-columns: minmax(0, 1fr); }
+  .kpi-grid { grid-template-columns: minmax(0, 1fr); }
   .nav-name { display: none; }
   .page { padding: 16px 12px 48px; }
   .scan-area { width: 100%; }
